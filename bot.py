@@ -1,9 +1,10 @@
-﻿import os
+import os
 from flask import Flask
 import telebot
+import threading
 
-# আপনার টেলিগ্রাম বট টোকেন
-TOKEN = "8881853485:AAFwkIjkrMaUbap5DoP2ntRpu1ilyt-fPeo"
+# BotFather থেকে পাওয়া আপনার @Gchaker_bot এর আসল টোকেনটি নিচের লাইনে বসান
+TOKEN = "8881853485:AAFWkIjkrMaUbap5DoP2ntRpu1ilyt-fPeo"
 bot = telebot.TeleBot(TOKEN)
 
 # রেন্ডার সার্ভারের জন্য ফ্লাস্ক অ্যাপ তৈরি
@@ -13,13 +14,12 @@ app = Flask(__name__)
 def home():
     return "Bot is running!"
 
-# বটের মূল কাজ বা হ্যান্ডলার এখানে লিখুন
+# বটের মূল কাজ বা হ্যান্ডলার
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "হ্যালো! আপনার জিমেইল বট এখন রেন্ডার সার্ভারে লাইভ আছে।")
+    bot.reply_to(message, "হ্যালো! আপনার @Gchaker_bot এখন রেন্ডার সার্ভারে সম্পূর্ণ লাইভ আছে।")
 
 # ব্যাকগ্রাউন্ডে বট চালু করার ট্রিকস
-import threading
 def run_bot():
     bot.infinity_polling(none_stop=True)
 
