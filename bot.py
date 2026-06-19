@@ -1,81 +1,99 @@
 import os
 import re
+import smtplib
+import dns.resolver
 from flask import Flask
 import telebot
 import threading
 import time
-from email_validator import validate_email, EmailNotValidError
 
 # আপনার বটের টোকেন
 TOKEN = "8881853485:AAFWkIjkrMaUbap5DoP2ntRpu1ilyt-fPeo"
 bot = telebot.TeleBot(TOKEN)
-
-# রেন্ডার সার্ভারের জন্য ফ্লাস্ক অ্যাপ তৈরি
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Email Validator Bot is running!"
+    return "Email SMTP Validator is running!"
 
-# টেক্সট থেকে ইমেইল খুঁজে বের করার রেগুলার এক্সপ্রেশন
 EMAIL_REGEX = r'[a-zA-Z0-9-_.]+@[a-zA-Z0-9-_.]+\.[a-zA-Z]{2,}'
+
+def verify_email_smtp(email):
+    """SMTP সার্ভারে নক করে ইমেইল সচল কি না চেক করার ফাংশন"""
+    try:
+        domain = email.split('@')[1]
+        # ডোমেইনের MX Record বা মেইল সার্ভার খুঁজে বের করা
+        records = dns.resolver.resolve(domain, 'MX')
+        mx_record = str(records[0].exchange)
+        
+        # SMTP কানেকশন তৈরি করা
+        server = smtplib.SMTP(timeout=10)
+        server.set_debuglevel(0)
+        server.connect(mx_record, 25)
+        server.helo(server.local_hostname)
+        server.mail('test@gmail.com') # একটি ডামি সেন্ডার অ্যাড্রেস
+        
+        # মূল ইমেইল চেক করা (RCPT TO)
+        code, message = server.rcpt(str(email))
+        server.quit()
+        
+        # SMTP Code 250 মানে ইমেইলটি একদম লাইভ এবং সচল আছে
+        if code == 250:
+            return "Live"
+        else:
+            return "Disabled/Invalid"
+    except Exception:
+        return "Disabled/Invalid"
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     welcome_text = (
-        "👋 হ্যালো! আমি আপনার বাল্ক ইমেইল ভেরিফায়ার বট।\n\n"
+        "👋 হ্যালো! আমি আপনার অ্যাডভান্সড বাল্ক জিমেইল ভেরিফায়ার বট।\n\n"
         "📩 আমাকে একসাথে অনেকগুলো ইমেইল টেক্সট আকারে পাঠান। "
-        "আমি সেগুলোকে চেক করে Live (Valid) এবং Disabled (Invalid) ইমেইল আলাদা করে দেব।"
+        "আমি সরাসরি SMTP সার্ভার চেক করে Live এবং Disabled ইমেইল আলাদা করে দেব।"
     )
     bot.reply_to(message, welcome_text)
 
 @bot.message_handler(func=lambda message: True)
 def check_bulk_emails(message):
     text = message.text
-    # টেক্সট থেকে সব ইমেইল এক্সট্রাক্ট করা
     emails = list(set(re.findall(EMAIL_REGEX, text)))
     
     if not emails:
-        bot.reply_to(message, "❌ আপনার মেসেজে কোনো বৈধ ইমেইল অ্যাড্রেস খুঁজে পাওয়া যায়নি। দয়া করে সঠিক ফরম্যাটে ইমেইল পাঠান।")
+        bot.reply_to(message, "❌ আপনার মেসেজে কোনো ইমেইল অ্যাড্রেস খুঁজে পাওয়া যায়নি।")
         return
     
-    status_msg = bot.reply_to(message, f"🔍 মোট {len(emails)}টি ইমেইল পাওয়া গেছে। ভেরিফাই করা হচ্ছে, দয়া করে একটু অপেক্ষা করুন...")
+    status_msg = bot.reply_to(message, f"🔍 মোট {len(emails)}টি ইমেইল পাওয়া গেছে। SMTP সার্ভারে ভেরিফাই করা হচ্ছে, দয়া করে একটু অপেক্ষা করুন...")
     
     live_emails = []
     disabled_emails = []
     
     for email in emails:
-        try:
-            # ইমেইলের ডোমেইন এবং সিনট্যাক্স লাইভ কি না চেক করা
-            validate_email(email, check_deliverability=True)
+        status = verify_email_smtp(email)
+        if status == "Live":
             live_emails.append(email)
-        except EmailNotValidError:
+        else:
             disabled_emails.append(email)
             
-    # ফলাফল তৈরি করা
     response = f"📊 **ইমেইল ভেরিফিকেশন রিপোর্ট**\n"
     response += f"━━━━━━━━━━━━━━━━━━\n"
     response += f"✅ **Live / Verified ({len(live_emails)}):**\n"
-    if live_emails:
-        response += "\n".join([f"`{e}`" for e in live_emails])
-    else:
-        response += "_কোনো লাইভ ইমেইল পাওয়া যায়নি_\n"
+    response += "\n".join([f"`{e}`" for e in live_emails]) if live_emails else "_কোনো লাইভ ইমেইল পাওয়া যায়নি_\n"
         
     response += f"\n\n❌ **Disabled / Invalid ({len(disabled_emails)}):**\n"
-    if disabled_emails:
-        response += "\n".join([f"`{e}`" for e in disabled_emails])
-    else:
-        response += "_কোনo ইনভ্যালিড ইমেইল পাওয়া যায়নি_\n"
+    response += "\n".join([f"`{e}`" for e in disabled_emails]) if disabled_emails else "_কোনো ইনভ্যালিড ইমেইল পাওয়া যায়নি_\n"
         
-    # ফলাফল টেলিগ্রামে পাঠানো
     bot.edit_message_text(response, chat_id=message.chat.id, message_id=status_msg.message_id, parse_mode="Markdown")
 
-# バックグラウンド পোলিং চালু
 def run_bot():
     while True:
         try:
+            # Conflict এরর এড়াতে আগের যেকোনো পোলিং সেশন ক্লিন করে নেওয়া
+            bot.delete_webhook(drop_pending_updates=True)
+            print("Starting fresh bot polling...")
             bot.infinity_polling(none_stop=True, timeout=60, long_polling_timeout=30)
         except Exception as e:
+            print(f"Polling error: {e}")
             time.sleep(5)
 
 bot_thread = threading.Thread(target=run_bot, daemon=True)
